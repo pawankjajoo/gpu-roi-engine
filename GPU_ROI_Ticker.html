@@ -1,0 +1,1999 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPU ROI Ticker Widget</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #090a0f;
+            --bg-secondary: #0f1118;
+            --border-color: #1a1d2a;
+            --accent-orange: #f97316;
+            --accent-positive: #34d399;
+            --accent-negative: #ef4444;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0a0;
+            --font-primary: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: var(--font-primary);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--accent-orange);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #fb923c;
+        }
+
+        ::selection {
+            background: var(--accent-orange);
+            color: var(--bg-primary);
+        }
+
+        /* Main widget container */
+        #gpu-roi-widget {
+            width: 100%;
+            max-width: 100%;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        #gpu-roi-widget.collapsed {
+            height: 180px;
+        }
+
+        #gpu-roi-widget.expanded {
+            height: auto;
+            max-height: calc(100vh - 40px);
+        }
+
+        /* Header */
+        .widget-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            background: linear-gradient(135deg, var(--bg-secondary) 0%, rgba(15, 17, 24, 0.8) 100%);
+            border-bottom: 1px solid var(--border-color);
+            min-height: 56px;
+            gap: 8px;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .pushstart-logo {
+            height: 28px;
+            width: auto;
+            flex-shrink: 0;
+        }
+
+        .header-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .live-dot {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            color: var(--accent-positive);
+            font-weight: 600;
+        }
+
+        .live-indicator {
+            width: 8px;
+            height: 8px;
+            background: var(--accent-positive);
+            border-radius: 50%;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .timer {
+            font-family: 'IBM Plex Mono', monospace;
+            font-weight: 500;
+            min-width: 30px;
+        }
+
+        .charity-link {
+            color: var(--accent-orange);
+            text-decoration: none;
+            font-size: 11px;
+            white-space: nowrap;
+            transition: color 0.2s;
+        }
+
+        .charity-link:hover {
+            color: #fb923c;
+            text-decoration: underline;
+        }
+
+        .toggle-btn {
+            background: var(--accent-orange);
+            color: var(--bg-primary);
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .toggle-btn:hover {
+            background: #fb923c;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3);
+        }
+
+        .toggle-btn:active {
+            transform: translateY(0);
+        }
+
+        /* Marquee (collapsed mode) */
+        .marquee-container {
+            position: relative;
+            width: 100%;
+            height: 112px;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border-color);
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+        }
+
+        .marquee-container.hidden {
+            display: none;
+        }
+
+        .marquee-track {
+            display: flex;
+            gap: 24px;
+            animation: scroll-left 40s linear infinite;
+            padding: 0 24px;
+            will-change: transform;
+        }
+
+        .marquee-track:hover {
+            animation-play-state: paused;
+        }
+
+        @keyframes scroll-left {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+
+        .gpu-ticker-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: rgba(26, 29, 42, 0.6);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            flex-shrink: 0;
+            min-width: 280px;
+            transition: all 0.3s;
+        }
+
+        .gpu-ticker-card:hover {
+            border-color: var(--accent-orange);
+            background: rgba(26, 29, 42, 1);
+        }
+
+        .brand-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .brand-dot.nvidia { background: #76b900; }
+        .brand-dot.amd { background: #ed1c24; }
+        .brand-dot.intel { background: #0071c5; }
+        .brand-dot.bitmain { background: #f7931a; }
+
+        .ticker-gpu-name {
+            font-weight: 600;
+            font-size: 13px;
+            min-width: 100px;
+        }
+
+        .ticker-profit {
+            font-weight: 700;
+            color: var(--accent-positive);
+            font-size: 13px;
+            min-width: 80px;
+            text-align: right;
+        }
+
+        .ticker-arrows {
+            display: flex;
+            gap: 4px;
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        /* Controls bar (expanded mode) */
+        .controls-bar {
+            display: none;
+            flex-wrap: wrap;
+            gap: 12px;
+            padding: 16px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            align-items: center;
+        }
+
+        .controls-bar.visible {
+            display: flex;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .control-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+        .search-input,
+        .filter-btn,
+        .sort-dropdown,
+        .pool-fee-input,
+        .slider-input {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-family: var(--font-primary);
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .search-input {
+            flex: 1;
+            min-width: 150px;
+            max-width: 300px;
+        }
+
+        .search-input::placeholder {
+            color: var(--text-secondary);
+        }
+
+        .filter-btn {
+            cursor: pointer;
+            white-space: nowrap;
+            padding: 8px 14px;
+        }
+
+        .filter-btn:hover {
+            border-color: var(--accent-orange);
+            background: rgba(249, 115, 22, 0.1);
+        }
+
+        .filter-btn.active {
+            background: var(--accent-orange);
+            color: var(--bg-primary);
+            border-color: var(--accent-orange);
+        }
+
+        .sort-dropdown,
+        .pool-fee-input {
+            cursor: pointer;
+        }
+
+        .sort-dropdown:hover,
+        .pool-fee-input:hover {
+            border-color: var(--accent-orange);
+        }
+
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 200px;
+        }
+
+        .slider-input {
+            flex: 1;
+            height: 6px;
+            padding: 0;
+            -webkit-appearance: none;
+            appearance: none;
+            background: linear-gradient(to right, var(--bg-primary), var(--accent-orange));
+            cursor: pointer;
+        }
+
+        .slider-input::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--accent-orange);
+            cursor: pointer;
+            box-shadow: 0 0 8px rgba(249, 115, 22, 0.5);
+        }
+
+        .slider-input::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--accent-orange);
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 0 8px rgba(249, 115, 22, 0.5);
+        }
+
+        .slider-value {
+            font-size: 12px;
+            font-weight: 500;
+            min-width: 50px;
+            text-align: right;
+            color: var(--accent-orange);
+        }
+
+        /* Grid container (expanded mode) */
+        .grid-container {
+            display: none;
+            padding: 16px;
+            background: var(--bg-primary);
+            gap: 16px;
+            grid-auto-rows: max-content;
+        }
+
+        .grid-container.visible {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        }
+
+        @media (max-width: 480px) {
+            .grid-container.visible {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .grid-container.visible {
+                grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            }
+        }
+
+        @media (min-width: 768px) {
+            .grid-container.visible {
+                grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            }
+        }
+
+        @media (min-width: 1024px) {
+            .grid-container.visible {
+                grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            }
+        }
+
+        @media (min-width: 1280px) {
+            .grid-container.visible {
+                grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            }
+        }
+
+        @media (min-width: 1920px) {
+            .grid-container.visible {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+
+        /* GPU Card */
+        .gpu-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-top: 3px solid var(--accent-orange);
+            border-radius: 6px;
+            overflow: hidden;
+            transition: all 0.3s;
+            position: relative;
+            clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
+        }
+
+        .gpu-card:hover {
+            border-color: var(--accent-orange);
+            box-shadow: 0 0 20px rgba(249, 115, 22, 0.25);
+            transform: translateY(-2px);
+        }
+
+        .card-header {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        .gpu-name-badges {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            flex: 1;
+        }
+
+        .gpu-name {
+            font-weight: 700;
+            font-size: 13px;
+            color: var(--text-primary);
+        }
+
+        .badge-row {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .badge.brand {
+            background: rgba(249, 115, 22, 0.2);
+            color: var(--accent-orange);
+        }
+
+        .badge.category {
+            background: rgba(52, 211, 153, 0.2);
+            color: var(--accent-positive);
+        }
+
+        .change-indicator {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--accent-positive);
+        }
+
+        .change-indicator.down {
+            color: var(--accent-negative);
+        }
+
+        /* Card specs */
+        .card-specs {
+            padding: 8px 12px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .spec-item {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .spec-label {
+            font-weight: 500;
+        }
+
+        .spec-value {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        /* Profit section */
+        .profit-section {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .profit-label {
+            font-size: 10px;
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+            letter-spacing: 0.5px;
+        }
+
+        .profit-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+        }
+
+        .profit-item {
+            background: rgba(26, 29, 42, 0.6);
+            padding: 6px;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+            text-align: center;
+            transition: all 0.2s;
+        }
+
+        .profit-item.highlighted {
+            border: 1px solid var(--accent-orange);
+            background: rgba(249, 115, 22, 0.1);
+        }
+
+        .profit-type {
+            font-size: 9px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .profit-value {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--accent-positive);
+            margin-top: 2px;
+        }
+
+        /* ROI section */
+        .roi-section {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .roi-label {
+            font-size: 10px;
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+            letter-spacing: 0.5px;
+        }
+
+        .roi-bar {
+            position: relative;
+            height: 24px;
+            background: rgba(26, 29, 42, 0.6);
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            padding: 0 6px;
+        }
+
+        .roi-fill {
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            background: var(--accent-positive);
+            border-radius: 3px 0 0 3px;
+            transition: width 0.3s ease;
+        }
+
+        .roi-fill.medium {
+            background: #eab308;
+        }
+
+        .roi-fill.low {
+            background: var(--accent-negative);
+        }
+
+        .roi-text {
+            position: relative;
+            z-index: 1;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        /* Efficiency */
+        .efficiency-section {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border-color);
+            text-align: center;
+        }
+
+        .efficiency-label {
+            font-size: 10px;
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .efficiency-value {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--accent-orange);
+            margin-top: 4px;
+        }
+
+        /* Commentary */
+        .commentary-section {
+            padding: 10px 12px;
+            border-left: 3px solid var(--accent-orange);
+            background: rgba(249, 115, 22, 0.05);
+            font-size: 11px;
+            color: var(--text-secondary);
+            font-style: italic;
+            line-height: 1.4;
+        }
+
+        /* Footer */
+        .widget-footer {
+            display: none;
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border-color);
+            font-size: 10px;
+            color: var(--text-secondary);
+            text-align: center;
+        }
+
+        .widget-footer.visible {
+            display: block;
+        }
+
+        .footer-link {
+            color: var(--accent-orange);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .footer-link:hover {
+            color: #fb923c;
+            text-decoration: underline;
+        }
+
+        /* Tooltip */
+        .tooltip {
+            position: fixed;
+            background: rgba(0, 0, 0, 0.95);
+            color: var(--text-primary);
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            z-index: 99999;
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            border: 1px solid var(--accent-orange);
+        }
+
+        .tooltip.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* Accessibility */
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+
+        @supports (padding: max(0px)) {
+            .widget-header,
+            .controls-bar,
+            .grid-container,
+            .widget-footer {
+                padding-left: max(16px, env(safe-area-inset-left));
+                padding-right: max(16px, env(safe-area-inset-right));
+            }
+        }
+
+        :focus-visible {
+            outline: 2px solid var(--accent-orange);
+            outline-offset: 2px;
+        }
+
+        button:focus-visible,
+        input:focus-visible,
+        select:focus-visible {
+            outline: 2px solid var(--accent-orange);
+            outline-offset: 2px;
+        }
+
+        /* Touch targets */
+        @media (pointer: coarse) {
+            .toggle-btn,
+            .filter-btn,
+            .charity-link {
+                min-height: 44px;
+                min-width: 44px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+        }
+
+        /* No GPU state */
+        .empty-state {
+            padding: 40px 16px;
+            text-align: center;
+            color: var(--text-secondary);
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .empty-state-text {
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gpu-roi-widget" class="collapsed">
+        <!-- Header -->
+        <div class="widget-header">
+            <div class="header-left">
+                <a href="https://www.pushstartsims.com/power" target="_blank" rel="noopener noreferrer" aria-label="View full GPU ROI chart">
+                    <img src="https://static.wixstatic.com/media/8cef4e_a9f713cedfff4ea88689521db953de89~mv2.png/v1/fill/w_561,h_107,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/White%20logo%20-%20no%20background.png"
+                         alt="Pushstart" class="pushstart-logo">
+                </a>
+                <a href="https://www.pushstartsims.com/post/cryptomining4charity" class="charity-link" target="_blank" rel="noopener noreferrer">
+                    Learn more about our <span class="hashtag">#Cryptomining4Charity</span> initiative. All GPUs used in customer builds are brand-new.
+                </a>
+                <div class="header-meta">
+                    <span class="live-dot">
+                        <span class="live-indicator"></span>
+                        LIVE
+                    </span>
+                    <span class="timer" id="timer">60s</span>
+                </div>
+            </div>
+            <button class="toggle-btn" id="toggle-btn">
+                Expand <span id="toggle-arrow">↑</span>
+            </button>
+        </div>
+
+        <!-- Marquee (Collapsed) -->
+        <div class="marquee-container" id="marquee">
+            <div class="marquee-track" id="marquee-track">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+
+        <!-- Controls (Expanded) -->
+        <div class="controls-bar" id="controls-bar">
+            <input type="text" class="search-input" id="search-input" placeholder="Search GPU name..." />
+
+            <div class="control-group">
+                <label class="control-label">Filter:</label>
+                <button class="filter-btn active" data-filter="all">All</button>
+                <button class="filter-btn" data-filter="nvidia">NVIDIA</button>
+                <button class="filter-btn" data-filter="amd">AMD</button>
+                <button class="filter-btn" data-filter="intel">Intel</button>
+                <button class="filter-btn" data-filter="datacenter">Datacenter</button>
+                <button class="filter-btn" data-filter="asic">ASIC</button>
+                <button class="filter-btn" data-filter="consumer">Consumer</button>
+                <button class="filter-btn" data-filter="profitable">Profitable Only</button>
+            </div>
+
+            <div class="control-group">
+                <label class="control-label">Sort:</label>
+                <select class="sort-dropdown" id="sort-dropdown">
+                    <option value="profit-desc">Profit ↓</option>
+                    <option value="roi-asc">ROI ↑</option>
+                    <option value="efficiency-desc">Efficiency ↓</option>
+                    <option value="power-asc">Power ↑</option>
+                    <option value="price-asc">Price ↑</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label class="control-label">Electricity:</label>
+                <div class="slider-container">
+                    <input type="range" class="slider-input" id="electricity-slider"
+                           min="0.01" max="0.50" step="0.01" value="0.12" />
+                    <span class="slider-value" id="electricity-value">$0.12</span>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label class="control-label">Pool Fee:</label>
+                <input type="number" class="pool-fee-input" id="pool-fee-input"
+                       min="0.5" max="5" step="0.5" value="1.5" placeholder="1.5" />
+                <span style="font-size: 12px; color: var(--text-secondary);">%</span>
+            </div>
+        </div>
+
+        <!-- Grid (Expanded) -->
+        <div class="grid-container" id="grid-container">
+            <!-- Populated by JS -->
+        </div>
+
+        <!-- Footer -->
+        <div class="widget-footer" id="widget-footer" style="width:100%;padding:14px 24px;margin-top:0;background:rgba(255,255,255,0.95);backdrop-filter:blur(24px);border-top:1px solid rgba(0,0,0,0.07);text-align:center;font-family:'DM Sans','Outfit',system-ui,sans-serif;font-size:11.5px;color:#5a6a80;letter-spacing:0.2px;line-height:1.7;box-sizing:border-box;position:sticky;bottom:0;z-index:300;">&copy; 2026 Pushstart LLC &nbsp;|&nbsp; Trademarks belong to their respective owners. All rights reserved. Made by humans in Austin, TX &nbsp;|&nbsp; <a href="https://pushstartsims.com/privacy-policy" target="_blank" rel="noopener" style="color:#0055cc;text-decoration:underline;text-underline-offset:2px;">Privacy Policy</a> &nbsp;|&nbsp; <a href="https://pushstartsims.com/terms-of-use" target="_blank" rel="noopener" style="color:#0055cc;text-decoration:underline;text-underline-offset:2px;">Terms of Use</a></div>
+    </div>
+
+    <!-- ENGINE SCRIPT - INLINED FROM GPU_ROI_Engine.js -->
+    <script>
+/**
+ * 
+ * GPU ROI ENGINE v2.0. Shared Data Module for All Widgets
+ * 
+ *
+ * Live API integration with profitability algorithm factoring in:
+ *   - Real-time crypto prices (CoinGecko)
+ *   - Mining difficulty & block rewards (WhatToMine)
+ *   - Network transaction fees (mempool.space for BTC)
+ *   - Pool fees (configurable, default 1.5%)
+ *   - Electricity costs (configurable)
+ *   - Cloud & AI leasing market rates
+ *
+ * CORS-safe: All APIs called are public with CORS headers.
+ * Designed for Wix iframe embeds. no backend needed.
+ *
+ * Author: Pushstart LLC by Pawan K Jajoo
+ * 
+ */
+
+/**
+ * 
+ * GPU ROI ENGINE v2.0. Shared Data Module for All Widgets
+ * 
+ *
+ * Live API integration with profitability algorithm factoring in:
+ *   - Real-time crypto prices (CoinGecko)
+ *   - Mining difficulty & block rewards (WhatToMine)
+ *   - Network transaction fees (mempool.space for BTC)
+ *   - Pool fees (configurable, default 1.5%)
+ *   - Electricity costs (configurable)
+ *   - Cloud & AI leasing market rates
+ *
+ * CORS-safe: All APIs called are public with CORS headers.
+ * Designed for Wix iframe embeds. no backend needed.
+ *
+ * Author: Pushstart LLC by Pawan K Jajoo
+ * 
+ */
+
+const GPURoiEngine = (() => {
+    'use strict';
+
+    /* 
+       GPU DATABASE. Hashrates, specs, lease rates
+       
+       hashrates: { algorithm: rate_in_algorithm_native_unit }
+         - sha256:   TH/s  (ASICs only)
+         - kawpow:   MH/s  (RVN. Ravencoin)
+         - kheavyhash: MH/s (KAS. Kaspa)
+         - autolykos: MH/s  (ERG. Ergo)
+         - etchash:  MH/s   (ETC. Ethereum Classic)
+       cloudLease: $/hr market rate (Vast.ai / RunPod averages)
+       aiLease:    $/hr market rate (inference workloads, datacenter only)
+     */
+    const GPU_DATABASE = [
+        //  DATACENTER / AI GPUs 
+        { name: 'NVIDIA B200',       brand: 'nvidia',  category: 'datacenter', tdp: 1000, msrp: 30000, hashrates: {},
+          cloudLease: 5.50, aiLease: 5.50, vram: '192GB HBM3e', cudaCores: 18432,
+          commentary: 'The top tier. Just works at scale.' },
+        { name: 'NVIDIA H200',       brand: 'nvidia',  category: 'datacenter', tdp: 700,  msrp: 25000, hashrates: {},
+          cloudLease: 3.80, aiLease: 3.80, vram: '141GB HBM3e', cudaCores: 16896,
+          commentary: 'Enterprise-grade profit. No friction.' },
+        { name: 'NVIDIA H100',       brand: 'nvidia',  category: 'datacenter', tdp: 700,  msrp: 25000, hashrates: {},
+          cloudLease: 2.85, aiLease: 2.85, vram: '80GB HBM3',   cudaCores: 16896,
+          commentary: 'Still the workhorse for AI inference.' },
+        { name: 'NVIDIA A100',       brand: 'nvidia',  category: 'datacenter', tdp: 400,  msrp: 10000, hashrates: {},
+          cloudLease: 1.50, aiLease: 1.50, vram: '80GB HBM2e',  cudaCores: 6912,
+          commentary: 'Budget-friendly datacenter tier.' },
+
+        //  ASIC MINERS (SHA-256 only. Bitcoin) 
+        { name: 'Antminer S21 XP',   brand: 'bitmain', category: 'asic', tdp: 3400, msrp: 5500,
+          hashrates: { sha256: 270 }, cloudLease: null, aiLease: null, vram: null, cudaCores: 0,
+          commentary: 'Peak efficiency for Bitcoin. For anyone.' },
+        { name: 'Antminer S21 Pro',  brand: 'bitmain', category: 'asic', tdp: 3510, msrp: 3800,
+          hashrates: { sha256: 234 }, cloudLease: null, aiLease: null, vram: null, cudaCores: 0,
+          commentary: 'Solid hashrate, serious returns.' },
+        { name: 'Antminer S19K Pro', brand: 'bitmain', category: 'asic', tdp: 2400, msrp: 1200,
+          hashrates: { sha256: 120 }, cloudLease: null, aiLease: null, vram: null, cudaCores: 0,
+          commentary: 'Entry point to mining. Ready to mine.' },
+
+        //  CONSUMER NVIDIA (GeForce RTX 50-series) 
+        { name: 'RTX 5090',          brand: 'nvidia', category: 'consumer', tdp: 575, msrp: 1999,
+          hashrates: { kawpow: 70, kheavyhash: 1200, autolykos: 350, etchash: 160 },
+          cloudLease: 1.20, aiLease: null, vram: '32GB GDDR7', cudaCores: 21760,
+          commentary: 'Bleeding edge. Unmatched raw power.' },
+        { name: 'RTX 5080',          brand: 'nvidia', category: 'consumer', tdp: 360, msrp: 999,
+          hashrates: { kawpow: 48, kheavyhash: 800, autolykos: 240, etchash: 110 },
+          cloudLease: 0.80, aiLease: null, vram: '16GB GDDR7', cudaCores: 10752,
+          commentary: 'Gaming meets leasing. Best mix.' },
+        { name: 'RTX 5070 Ti',       brand: 'nvidia', category: 'consumer', tdp: 300, msrp: 749,
+          hashrates: { kawpow: 38, kheavyhash: 650, autolykos: 200, etchash: 85 },
+          cloudLease: 0.55, aiLease: null, vram: '16GB GDDR7', cudaCores: 8960,
+          commentary: 'Mid-tier muscle. Efficient returns.' },
+        { name: 'RTX 5070',          brand: 'nvidia', category: 'consumer', tdp: 250, msrp: 549,
+          hashrates: { kawpow: 32, kheavyhash: 550, autolykos: 170, etchash: 70 },
+          cloudLease: 0.45, aiLease: null, vram: '12GB GDDR7', cudaCores: 6144,
+          commentary: 'The sweet spot for learners.' },
+
+        //  CONSUMER NVIDIA (GeForce RTX 40-series) 
+        { name: 'RTX 4090',          brand: 'nvidia', category: 'consumer', tdp: 450, msrp: 1599,
+          hashrates: { kawpow: 60, kheavyhash: 800, autolykos: 260, etchash: 132 },
+          cloudLease: 0.90, aiLease: null, vram: '24GB GDDR6X', cudaCores: 16384,
+          commentary: 'Still kicks. Won\'t stop you.' },
+        { name: 'RTX 4080 Super',    brand: 'nvidia', category: 'consumer', tdp: 320, msrp: 999,
+          hashrates: { kawpow: 38, kheavyhash: 550, autolykos: 180, etchash: 88 },
+          cloudLease: 0.60, aiLease: null, vram: '16GB GDDR6X', cudaCores: 10240,
+          commentary: 'Proven workhorse. Steady income.' },
+        { name: 'RTX 4070 Ti Super', brand: 'nvidia', category: 'consumer', tdp: 285, msrp: 799,
+          hashrates: { kawpow: 30, kheavyhash: 450, autolykos: 155, etchash: 72 },
+          cloudLease: 0.45, aiLease: null, vram: '16GB GDDR6X', cudaCores: 8448,
+          commentary: 'No filler, all fiber.' },
+        { name: 'RTX 4070 Super',    brand: 'nvidia', category: 'consumer', tdp: 220, msrp: 599,
+          hashrates: { kawpow: 25, kheavyhash: 380, autolykos: 130, etchash: 58 },
+          cloudLease: 0.35, aiLease: null, vram: '12GB GDDR6X', cudaCores: 7168,
+          commentary: 'Affordable. Gets the job done.' },
+        { name: 'RTX 4070',          brand: 'nvidia', category: 'consumer', tdp: 200, msrp: 549,
+          hashrates: { kawpow: 22, kheavyhash: 340, autolykos: 115, etchash: 52 },
+          cloudLease: 0.30, aiLease: null, vram: '12GB GDDR6X', cudaCores: 5888,
+          commentary: 'Entry to Ada. Smart pick.' },
+        { name: 'RTX 4060 Ti',       brand: 'nvidia', category: 'consumer', tdp: 160, msrp: 399,
+          hashrates: { kawpow: 18, kheavyhash: 260, autolykos: 90, etchash: 40 },
+          cloudLease: 0.22, aiLease: null, vram: '8GB GDDR6', cudaCores: 4352,
+          commentary: 'Budget friendly. Still counts.' },
+        { name: 'RTX 4060',          brand: 'nvidia', category: 'consumer', tdp: 115, msrp: 299,
+          hashrates: { kawpow: 14, kheavyhash: 200, autolykos: 68, etchash: 30 },
+          cloudLease: 0.18, aiLease: null, vram: '8GB GDDR6', cudaCores: 3072,
+          commentary: 'Low power. High value proposition.' },
+
+        //  CONSUMER NVIDIA (GeForce RTX 30-series) 
+        { name: 'RTX 3090 Ti',       brand: 'nvidia', category: 'consumer', tdp: 450, msrp: 1099,
+          hashrates: { kawpow: 52, kheavyhash: 680, autolykos: 230, etchash: 120 },
+          cloudLease: 0.55, aiLease: null, vram: '24GB GDDR6X', cudaCores: 10752,
+          commentary: 'Legacy titan. Still profitable.' },
+        { name: 'RTX 3090',          brand: 'nvidia', category: 'consumer', tdp: 350, msrp: 999,
+          hashrates: { kawpow: 48, kheavyhash: 620, autolykos: 210, etchash: 110 },
+          cloudLease: 0.45, aiLease: null, vram: '24GB GDDR6X', cudaCores: 10496,
+          commentary: 'Battle-tested performance.' },
+        { name: 'RTX 3080 Ti',       brand: 'nvidia', category: 'consumer', tdp: 350, msrp: 700,
+          hashrates: { kawpow: 42, kheavyhash: 540, autolykos: 185, etchash: 95 },
+          cloudLease: 0.38, aiLease: null, vram: '12GB GDDR6X', cudaCores: 10240,
+          commentary: 'Used market gem. Value locked.' },
+        { name: 'RTX 3080',          brand: 'nvidia', category: 'consumer', tdp: 320, msrp: 599,
+          hashrates: { kawpow: 38, kheavyhash: 480, autolykos: 165, etchash: 85 },
+          cloudLease: 0.32, aiLease: null, vram: '10GB GDDR6X', cudaCores: 8704,
+          commentary: 'Reliable. No hype, pure results.' },
+        { name: 'RTX 3070 Ti',       brand: 'nvidia', category: 'consumer', tdp: 290, msrp: 499,
+          hashrates: { kawpow: 30, kheavyhash: 380, autolykos: 140, etchash: 68 },
+          cloudLease: 0.25, aiLease: null, vram: '8GB GDDR6X', cudaCores: 6144,
+          commentary: 'Secondary market darling.' },
+        { name: 'RTX 3070',          brand: 'nvidia', category: 'consumer', tdp: 220, msrp: 399,
+          hashrates: { kawpow: 25, kheavyhash: 310, autolykos: 120, etchash: 56 },
+          cloudLease: 0.20, aiLease: null, vram: '8GB GDDR6', cudaCores: 5888,
+          commentary: 'Humble machine. Gets it done.' },
+
+        //  CONSUMER AMD (Radeon RX 7000 & 6000 series) 
+        { name: 'RX 7900 XTX',       brand: 'amd', category: 'consumer', tdp: 355, msrp: 999,
+          hashrates: { kawpow: 48, kheavyhash: 600, autolykos: 220, etchash: 95 },
+          cloudLease: 0.50, aiLease: null, vram: '24GB GDDR6', cudaCores: 0,
+          commentary: 'RDNA 3 peak. Mining perfected.' },
+        { name: 'RX 7900 XT',        brand: 'amd', category: 'consumer', tdp: 315, msrp: 749,
+          hashrates: { kawpow: 35, kheavyhash: 450, autolykos: 175, etchash: 75 },
+          cloudLease: 0.35, aiLease: null, vram: '20GB GDDR6', cudaCores: 0,
+          commentary: 'The overlooked champion.' },
+        { name: 'RX 7800 XT',        brand: 'amd', category: 'consumer', tdp: 263, msrp: 499,
+          hashrates: { kawpow: 26, kheavyhash: 350, autolykos: 135, etchash: 58 },
+          cloudLease: 0.25, aiLease: null, vram: '16GB GDDR6', cudaCores: 0,
+          commentary: 'Balanced. For anyone serious.' },
+        { name: 'RX 7700 XT',        brand: 'amd', category: 'consumer', tdp: 245, msrp: 449,
+          hashrates: { kawpow: 22, kheavyhash: 300, autolykos: 110, etchash: 48 },
+          cloudLease: 0.20, aiLease: null, vram: '12GB GDDR6', cudaCores: 0,
+          commentary: 'Scrappy performer. Punches up.' },
+        { name: 'RX 7600 XT',        brand: 'amd', category: 'consumer', tdp: 150, msrp: 329,
+          hashrates: { kawpow: 14, kheavyhash: 180, autolykos: 68, etchash: 30 },
+          cloudLease: 0.15, aiLease: null, vram: '16GB GDDR6', cudaCores: 0,
+          commentary: 'Entry AMD. Low drag, decent speed.' },
+        { name: 'RX 6900 XT',        brand: 'amd', category: 'consumer', tdp: 300, msrp: 549,
+          hashrates: { kawpow: 30, kheavyhash: 380, autolykos: 150, etchash: 62 },
+          cloudLease: 0.28, aiLease: null, vram: '16GB GDDR6', cudaCores: 0,
+          commentary: 'Secondary market. Still relevant.' },
+        { name: 'RX 6800 XT',        brand: 'amd', category: 'consumer', tdp: 300, msrp: 449,
+          hashrates: { kawpow: 25, kheavyhash: 320, autolykos: 130, etchash: 55 },
+          cloudLease: 0.22, aiLease: null, vram: '16GB GDDR6', cudaCores: 0,
+          commentary: 'Budget AMD option. Solid legs.' },
+        { name: 'RX 6700 XT',        brand: 'amd', category: 'consumer', tdp: 230, msrp: 349,
+          hashrates: { kawpow: 18, kheavyhash: 220, autolykos: 85, etchash: 38 },
+          cloudLease: 0.15, aiLease: null, vram: '12GB GDDR6', cudaCores: 0,
+          commentary: 'The value leader for AMD.' },
+
+        //  CONSUMER INTEL ARC 
+        { name: 'Intel Arc B580',     brand: 'intel', category: 'consumer', tdp: 150, msrp: 249,
+          hashrates: { kawpow: 15, kheavyhash: 200, autolykos: 60, etchash: 26 },
+          cloudLease: 0.12, aiLease: null, vram: '12GB GDDR6', cudaCores: 0,
+          commentary: 'Intel entry. Efficiency matters.' },
+        { name: 'Intel Arc A770',     brand: 'intel', category: 'consumer', tdp: 225, msrp: 349,
+          hashrates: { kawpow: 20, kheavyhash: 260, autolykos: 85, etchash: 35 },
+          cloudLease: 0.18, aiLease: null, vram: '16GB GDDR6', cudaCores: 0,
+          commentary: 'Arc flagship. Performance contender.' },
+        { name: 'Intel Arc A750',     brand: 'intel', category: 'consumer', tdp: 225, msrp: 289,
+          hashrates: { kawpow: 16, kheavyhash: 210, autolykos: 68, etchash: 28 },
+          cloudLease: 0.14, aiLease: null, vram: '8GB GDDR6', cudaCores: 0,
+          commentary: 'Balanced Arc option. Smart value.' },
+        { name: 'Intel Arc A580',     brand: 'intel', category: 'consumer', tdp: 185, msrp: 179,
+          hashrates: { kawpow: 12, kheavyhash: 160, autolykos: 50, etchash: 22 },
+          cloudLease: 0.10, aiLease: null, vram: '8GB GDDR6', cudaCores: 0,
+          commentary: 'Budget Arc. Low power, low cost.' },
+        { name: 'Intel Arc B570',     brand: 'intel', category: 'consumer', tdp: 150, msrp: 219,
+          hashrates: { kawpow: 13, kheavyhash: 180, autolykos: 55, etchash: 24 },
+          cloudLease: 0.11, aiLease: null, vram: '10GB GDDR6', cudaCores: 0,
+          commentary: 'Arc efficiency focused.' }
+    ];
+
+    /* 
+       COIN DEFINITIONS. Algorithm → CoinGecko ID mapping
+        */
+    const COIN_DEFINITIONS = {
+        bitcoin:  { symbol: 'BTC', algorithm: 'sha256',     geckoId: 'bitcoin',  wtmId: 1,   unit: 'TH/s' },
+        kaspa:    { symbol: 'KAS', algorithm: 'kheavyhash', geckoId: 'kaspa',    wtmId: 352, unit: 'MH/s' },
+        ravencoin:{ symbol: 'RVN', algorithm: 'kawpow',     geckoId: 'ravencoin',wtmId: 234, unit: 'MH/s' },
+        ergo:     { symbol: 'ERG', algorithm: 'autolykos',  geckoId: 'ergo',     wtmId: 340, unit: 'MH/s' },
+        etc:      { symbol: 'ETC', algorithm: 'etchash',    geckoId: 'ethereum-classic', wtmId: 162, unit: 'MH/s' }
+    };
+
+    /* 
+       DEFAULT FEE MODEL
+        */
+    const DEFAULT_FEES = {
+        poolFeePercent: 1.5,         // Pool fee as % of gross revenue
+        btcTxFeeUsd: 2.50,          // Avg BTC withdrawal fee per day (pool payout)
+        kasTxFeeUsd: 0.001,         // Negligible
+        rvnTxFeeUsd: 0.005,         // Negligible
+        ergTxFeeUsd: 0.002,         // Negligible
+        etcTxFeeUsd: 0.01,          // Negligible
+    };
+
+    /* 
+       BASELINE REVENUE. Fallback when APIs fail
+       $/day per unit of hashrate (used only as fallback)
+        */
+    const BASELINE_REVENUE = {
+        sha256:     { perUnit: 0.074, unitLabel: 'TH/s' },  // ~$0.074/TH/s/day
+        kawpow:     { perUnit: 0.009, unitLabel: 'MH/s' },  // ~$0.009/MH/s/day
+        kheavyhash: { perUnit: 0.012, unitLabel: 'MH/s' },  // ~$0.012/MH/s/day
+        autolykos:  { perUnit: 0.006, unitLabel: 'MH/s' },  // ~$0.006/MH/s/day
+        etchash:    { perUnit: 0.005, unitLabel: 'MH/s' },  // ~$0.005/MH/s/day
+    };
+
+    /* 
+       STREET PRICES. Hardcoded GPU retail fallback
+        */
+    const STREET_PRICES = {
+        'NVIDIA B200': 30000, 'NVIDIA H200': 25000, 'NVIDIA H100': 25000, 'NVIDIA A100': 10000,
+        'Antminer S21 XP': 5500, 'Antminer S21 Pro': 3800, 'Antminer S19K Pro': 1200,
+        'RTX 5090': 1999, 'RTX 5080': 999, 'RTX 5070 Ti': 749, 'RTX 5070': 549,
+        'RTX 4090': 1599, 'RTX 4080 Super': 999, 'RTX 4070 Ti Super': 799,
+        'RTX 4070 Super': 599, 'RTX 4070': 549, 'RTX 4060 Ti': 399, 'RTX 4060': 299,
+        'RTX 3090 Ti': 1099, 'RTX 3090': 999, 'RTX 3080 Ti': 700, 'RTX 3080': 599,
+        'RTX 3070 Ti': 499, 'RTX 3070': 399,
+        'RX 7900 XTX': 999, 'RX 7900 XT': 749, 'RX 7800 XT': 499, 'RX 7700 XT': 449,
+        'RX 7600 XT': 329, 'RX 6900 XT': 549, 'RX 6800 XT': 449, 'RX 6700 XT': 349,
+        'Intel Arc B580': 249, 'Intel Arc A770': 349, 'Intel Arc A750': 289,
+        'Intel Arc A580': 179, 'Intel Arc B570': 219,
+    };
+
+    /* 
+       API MODULE. Live data fetchers (all CORS-safe)
+        */
+    const API = {
+        TIMEOUT: 8000,
+
+        /**
+         * Race a fetch against a timeout
+         */
+        async fetchWithTimeout(url, ms) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), ms || this.TIMEOUT);
+            try {
+                const r = await fetch(url, { signal: controller.signal });
+                clearTimeout(timer);
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                return await r.json();
+            } catch (e) {
+                clearTimeout(timer);
+                throw e;
+            }
+        },
+
+        /**
+         * CoinGecko. live crypto prices in USD
+         * Free tier: 10-30 calls/min, CORS enabled
+         * Returns: { bitcoin: { usd: 97000 }, kaspa: { usd: 0.12 }, ... }
+         */
+        async fetchCryptoPrices() {
+            const ids = Object.values(COIN_DEFINITIONS).map(c => c.geckoId).join(',');
+            const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`;
+            return await this.fetchWithTimeout(url);
+        },
+
+        /**
+         * WhatToMine. mining profitability per coin
+         * Returns coin data including: nethash, difficulty, block_reward, exchange_rate
+         * We use this to calculate revenue per hashrate unit per day
+         */
+        async fetchWhatToMine() {
+            // WhatToMine has no CORS headers, proxy it
+            const raw = 'https://whattomine.com/coins.json';
+            const url = 'https://corsproxy.io/?' + encodeURIComponent(raw);
+            return await this.fetchWithTimeout(url, 10000);
+        },
+
+        /**
+         * mempool.space. real-time Bitcoin fee estimates
+         * Returns: { fastestFee, halfHourFee, hourFee, economyFee, minimumFee }
+         * Units: sat/vB
+         */
+        async fetchBtcFees() {
+            const url = 'https://mempool.space/api/v1/fees/recommended';
+            return await this.fetchWithTimeout(url);
+        },
+
+        /**
+         * SerpAPI (optional). live GPU retail pricing via Google Shopping
+         * Requires user-provided API key
+         */
+        async fetchGpuPrice(gpuName, serpApiKey) {
+            if (!serpApiKey) return null;
+            try {
+                const url = `https://serpapi.com/search.json?engine=google_shopping&q=${encodeURIComponent(gpuName + ' GPU price')}&api_key=${serpApiKey}`;
+                const data = await this.fetchWithTimeout(url, 6000);
+                if (data.shopping_results && data.shopping_results.length > 0) {
+                    const retailers = ['Amazon', 'Newegg', 'Best Buy', 'B&H', 'Micro Center'];
+                    let best = null;
+                    for (const result of data.shopping_results) {
+                        const price = parseFloat(result.extracted_price);
+                        if (!price || price < 50) continue;
+                        const source = result.source || 'Google Shopping';
+                        const isRetailer = retailers.some(r => source.includes(r));
+                        if (!best || price < best.price || (isRetailer && price <= best.price * 1.05)) {
+                            best = { price, source, url: result.link || '' };
+                        }
+                    }
+                    return best;
+                }
+            } catch (e) { /* SerpAPI optional. swallow errors */ }
+            return null;
+        }
+    };
+
+    /* 
+       CACHE. In-memory + localStorage with TTL
+       Optimized by Pawan K Jajoo
+        */
+    const Cache = {
+        _mem: {},
+        TTL: 55000,  // 55 seconds (just under the 60s refresh cycle)
+
+        get(key) {
+            const entry = this._mem[key];
+            if (entry && Date.now() - entry.ts < this.TTL) return entry.data;
+            // Try localStorage fallback
+            try {
+                const stored = localStorage.getItem('gpuroi_' + key);
+                if (stored) {
+                    const parsed = JSON.parse(stored);
+                    if (Date.now() - parsed.ts < this.TTL * 10) { // localStorage has 10x TTL
+                        this._mem[key] = { data: parsed.data, ts: parsed.ts };
+                        return parsed.data;
+                    }
+                }
+            } catch (e) {}
+            return null;
+        },
+
+        set(key, data) {
+            this._mem[key] = { data, ts: Date.now() };
+            try {
+                localStorage.setItem('gpuroi_' + key, JSON.stringify({ data, ts: Date.now() }));
+            } catch (e) {}
+        }
+    };
+
+    /* 
+       PROFITABILITY CALCULATOR
+        */
+    const Calculator = {
+        /**
+         * Calculate mining revenue for a GPU on a specific algorithm
+         * using live WhatToMine data or baseline fallback.
+         *
+         * @param {number} hashrate - GPU hashrate in native units
+         * @param {string} algorithm - Algorithm name (sha256, kawpow, etc.)
+         * @param {object} liveData - Live coin data from WhatToMine (optional)
+         * @returns {object} { grossRevenue, coin, symbol }
+         */
+        miningGrossRevenue(hashrate, algorithm, liveData) {
+            if (!hashrate || hashrate <= 0) return null;
+
+            // Try live data first
+            if (liveData && liveData.coins) {
+                // Find the most profitable coin for this algorithm
+                let bestRevenue = 0;
+                let bestCoin = null;
+
+                for (const [coinKey, coinData] of Object.entries(liveData.coins)) {
+                    if (!coinData.tag || !coinData.algorithm) continue;
+
+                    // Match algorithm name (WhatToMine uses different casing)
+                    const wtmAlgo = coinData.algorithm.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const ourAlgo = algorithm.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+                    if (wtmAlgo === ourAlgo || this._algoMatch(wtmAlgo, ourAlgo)) {
+                        // WhatToMine gives btc_revenue per unit hashrate per day
+                        // We need to convert using the coin's exchange rate
+                        const revenuePerDay = parseFloat(coinData.btc_revenue) || 0;
+                        const btcPrice = parseFloat(coinData.exchange_rate) || 0;
+                        const revenue = hashrate * revenuePerDay * (btcPrice > 0 ? btcPrice : 1);
+
+                        if (revenue > bestRevenue) {
+                            bestRevenue = revenue;
+                            bestCoin = { name: coinKey, symbol: coinData.tag, revenue: bestRevenue };
+                        }
+                    }
+                }
+
+                if (bestCoin) return bestCoin;
+            }
+
+            // Fallback to baseline
+            const baseline = BASELINE_REVENUE[algorithm];
+            if (!baseline) return null;
+
+            const coinDef = Object.values(COIN_DEFINITIONS).find(c => c.algorithm === algorithm);
+            return {
+                name: coinDef ? coinDef.geckoId : algorithm,
+                symbol: coinDef ? coinDef.symbol : '???',
+                revenue: hashrate * baseline.perUnit
+            };
+        },
+
+        _algoMatch(wtm, ours) {
+            const aliases = {
+                'sha256': ['sha256'],
+                'kawpow': ['kawpow'],
+                'kheavyhash': ['kheavyhash', 'heavyhash'],
+                'autolykos': ['autolykos', 'autolykos2'],
+                'etchash': ['etchash', 'ethash']
+            };
+            for (const [key, alts] of Object.entries(aliases)) {
+                if (alts.includes(ours) && alts.includes(wtm)) return true;
+                if (key === ours && alts.includes(wtm)) return true;
+            }
+            return false;
+        },
+
+        /**
+         * Calculate NET mining profit for a GPU across all algorithms
+         * Returns the most profitable algorithm after all deductions.
+         *
+         * @param {object} gpu - GPU entry from GPU_DATABASE
+         * @param {number} electricityCost - $/kWh
+         * @param {object} liveData - WhatToMine data (optional)
+         * @param {object} btcFees - mempool.space fee data (optional)
+         * @param {object} fees - Fee configuration
+         * @returns {object} { netProfit, grossRevenue, electricityCost, poolFee, networkFee, algorithm, coin }
+         */
+        bestMiningProfit(gpu, electricityCost, liveData, btcFees, fees) {
+            const f = { ...DEFAULT_FEES, ...(fees || {}) };
+            const electricityCostPerDay = (gpu.tdp / 1000) * 24 * electricityCost;
+            let best = null;
+
+            for (const [algo, hashrate] of Object.entries(gpu.hashrates || {})) {
+                const result = this.miningGrossRevenue(hashrate, algo, liveData);
+                if (!result) continue;
+
+                const grossRevenue = result.revenue;
+                const poolFee = grossRevenue * (f.poolFeePercent / 100);
+
+                // Network fee depends on the coin
+                let networkFee = 0;
+                if (algo === 'sha256') {
+                    // BTC network fee from mempool.space or default
+                    if (btcFees && btcFees.hourFee) {
+                        // Avg BTC withdrawal TX is ~250 vBytes, pool pays out ~1x/day
+                        networkFee = (btcFees.hourFee * 250 / 100000000) * (result.revenue > 0 ? 1 : 0);
+                        // Convert sats to USD (we'll need BTC price)
+                        // For simplicity, use the default USD estimate
+                        networkFee = f.btcTxFeeUsd;
+                    } else {
+                        networkFee = f.btcTxFeeUsd;
+                    }
+                } else if (algo === 'kawpow') {
+                    networkFee = f.rvnTxFeeUsd;
+                } else if (algo === 'kheavyhash') {
+                    networkFee = f.kasTxFeeUsd;
+                } else if (algo === 'autolykos') {
+                    networkFee = f.ergTxFeeUsd;
+                } else if (algo === 'etchash') {
+                    networkFee = f.etcTxFeeUsd;
+                }
+
+                const netProfit = grossRevenue - electricityCostPerDay - poolFee - networkFee;
+
+                if (!best || netProfit > best.netProfit) {
+                    best = {
+                        netProfit,
+                        grossRevenue,
+                        electricityCostPerDay,
+                        poolFee,
+                        networkFee,
+                        algorithm: algo,
+                        coin: result.symbol,
+                        coinName: result.name
+                    };
+                }
+            }
+
+            return best;
+        },
+
+        /**
+         * Calculate cloud leasing daily revenue
+         */
+        cloudLeaseDaily(gpu) {
+            if (!gpu.cloudLease) return null;
+            return gpu.cloudLease * 24; // $/hr → $/day
+        },
+
+        /**
+         * Calculate AI inference leasing daily revenue
+         */
+        aiLeaseDaily(gpu) {
+            if (!gpu.aiLease) return null;
+            return gpu.aiLease * 24; // $/hr → $/day
+        },
+
+        /**
+         * MASTER FUNCTION: Get full profitability breakdown for a GPU
+         * Returns all revenue streams with the best highlighted.
+         */
+        fullBreakdown(gpu, electricityCost, liveData, btcFees, fees) {
+            const mining = this.bestMiningProfit(gpu, electricityCost, liveData, btcFees, fees);
+            const cloud = this.cloudLeaseDaily(gpu);
+            const ai = this.aiLeaseDaily(gpu);
+
+            const streams = [];
+
+            if (mining) {
+                streams.push({
+                    type: 'mining',
+                    label: `Mining (${mining.coin})`,
+                    shortLabel: 'Mining',
+                    dailyProfit: mining.netProfit,
+                    grossRevenue: mining.grossRevenue,
+                    electricityCost: mining.electricityCostPerDay,
+                    poolFee: mining.poolFee,
+                    networkFee: mining.networkFee,
+                    algorithm: mining.algorithm,
+                    coin: mining.coin
+                });
+            }
+
+            if (cloud !== null) {
+                streams.push({
+                    type: 'cloud',
+                    label: 'Cloud Lease',
+                    shortLabel: 'Cloud',
+                    dailyProfit: cloud,
+                    grossRevenue: cloud,
+                    electricityCost: 0,
+                    poolFee: 0,
+                    networkFee: 0,
+                    algorithm: null,
+                    coin: null
+                });
+            }
+
+            if (ai !== null) {
+                streams.push({
+                    type: 'ai',
+                    label: 'AI Inference',
+                    shortLabel: 'AI',
+                    dailyProfit: ai,
+                    grossRevenue: ai,
+                    electricityCost: 0,
+                    poolFee: 0,
+                    networkFee: 0,
+                    algorithm: null,
+                    coin: null
+                });
+            }
+
+            // Sort by daily profit descending
+            streams.sort((a, b) => b.dailyProfit - a.dailyProfit);
+
+            const bestStream = streams.length > 0 ? streams[0] : null;
+            const bestDailyProfit = bestStream ? bestStream.dailyProfit : 0;
+            const roiDays = bestDailyProfit > 0 ? Math.ceil(gpu.msrp / bestDailyProfit) : Infinity;
+            const efficiency = gpu.tdp > 0 && bestDailyProfit > 0
+                ? (bestDailyProfit / gpu.tdp * 1000) : 0; // $/kW/day
+
+            return {
+                gpu: gpu.name,
+                brand: gpu.brand,
+                category: gpu.category,
+                msrp: gpu.msrp,
+                tdp: gpu.tdp,
+                vram: gpu.vram,
+                cudaCores: gpu.cudaCores,
+                commentary: gpu.commentary,
+                streams,
+                best: bestStream,
+                bestDailyProfit,
+                roiDays,
+                efficiency: parseFloat(efficiency.toFixed(4))
+            };
+        }
+    };
+
+    /* 
+       MAIN ENGINE. Orchestrates data fetching & calculation
+        */
+    const Engine = {
+        // State
+        electricityCost: 0.10,
+        poolFeePercent: 1.5,
+        serpApiKey: null,
+        isLive: false,
+        lastRefresh: null,
+        _liveData: null,
+        _btcFees: null,
+        _cryptoPrices: null,
+        _onUpdate: null,
+
+        /**
+         * Initialize engine. Call once on page load.
+         */
+        init(options) {
+            this.electricityCost = options?.electricityCost || 0.10;
+            this.poolFeePercent = options?.poolFeePercent || 1.5;
+            this.serpApiKey = options?.serpApiKey || null;
+            this._onUpdate = options?.onUpdate || null;
+
+            // Load persisted settings
+            try {
+                const ec = localStorage.getItem('gpuroi_electricityCost');
+                if (ec) this.electricityCost = parseFloat(ec) || 0.10;
+                const pf = localStorage.getItem('gpuroi_poolFee');
+                if (pf) this.poolFeePercent = parseFloat(pf) || 1.5;
+                const sk = localStorage.getItem('gpuroi_serpApiKey');
+                if (sk) this.serpApiKey = sk;
+            } catch (e) {}
+        },
+
+        /**
+         * Persist settings to localStorage
+         */
+        saveSettings() {
+            try {
+                localStorage.setItem('gpuroi_electricityCost', this.electricityCost);
+                localStorage.setItem('gpuroi_poolFee', this.poolFeePercent);
+                if (this.serpApiKey) {
+                    localStorage.setItem('gpuroi_serpApiKey', this.serpApiKey);
+                } else {
+                    localStorage.removeItem('gpuroi_serpApiKey');
+                }
+            } catch (e) {}
+        },
+
+        /**
+         * Fetch all live data from APIs. Uses cache when available.
+         */
+        async fetchLiveData() {
+            let isLive = false;
+
+            // 1. Crypto prices
+            const cachedPrices = Cache.get('cryptoPrices');
+            if (cachedPrices) {
+                this._cryptoPrices = cachedPrices;
+            } else {
+                try {
+                    this._cryptoPrices = await API.fetchCryptoPrices();
+                    Cache.set('cryptoPrices', this._cryptoPrices);
+                    isLive = true;
+                } catch (e) {
+                    console.warn('[GPU ROI] CoinGecko fetch failed:', e.message);
+                }
+            }
+
+            // 2. WhatToMine mining data
+            const cachedWtm = Cache.get('whattomine');
+            if (cachedWtm) {
+                this._liveData = cachedWtm;
+            } else {
+                try {
+                    this._liveData = await API.fetchWhatToMine();
+                    Cache.set('whattomine', this._liveData);
+                    isLive = true;
+                } catch (e) {
+                    console.warn('[GPU ROI] WhatToMine fetch failed:', e.message);
+                    this._liveData = null;
+                }
+            }
+
+            // 3. BTC fees
+            const cachedFees = Cache.get('btcFees');
+            if (cachedFees) {
+                this._btcFees = cachedFees;
+            } else {
+                try {
+                    this._btcFees = await API.fetchBtcFees();
+                    Cache.set('btcFees', this._btcFees);
+                    isLive = true;
+                } catch (e) {
+                    console.warn('[GPU ROI] mempool.space fetch failed:', e.message);
+                    this._btcFees = null;
+                }
+            }
+
+            this.isLive = isLive || !!cachedPrices || !!cachedWtm;
+            this.lastRefresh = new Date();
+        },
+
+        /**
+         * Calculate profitability for ALL GPUs. Returns sorted array.
+         */
+        calculateAll(sortBy) {
+            const fees = { poolFeePercent: this.poolFeePercent };
+            const results = GPU_DATABASE.map(gpu =>
+                Calculator.fullBreakdown(gpu, this.electricityCost, this._liveData, this._btcFees, fees)
+            );
+
+            // Sort
+            const sortFn = {
+                'profit-desc':     (a, b) => b.bestDailyProfit - a.bestDailyProfit,
+                'profit-asc':      (a, b) => a.bestDailyProfit - b.bestDailyProfit,
+                'roi-asc':         (a, b) => a.roiDays - b.roiDays,
+                'roi-desc':        (a, b) => b.roiDays - a.roiDays,
+                'efficiency-desc': (a, b) => b.efficiency - a.efficiency,
+                'tdp-asc':         (a, b) => a.tdp - b.tdp,
+                'price-asc':       (a, b) => a.msrp - b.msrp,
+                'price-desc':      (a, b) => b.msrp - a.msrp,
+            }[sortBy || 'profit-desc'] || ((a, b) => b.bestDailyProfit - a.bestDailyProfit);
+
+            return results.sort(sortFn);
+        },
+
+        /**
+         * Full refresh cycle: fetch data → calculate → notify
+         */
+        async refresh() {
+            await this.fetchLiveData();
+            const results = this.calculateAll();
+            if (this._onUpdate) this._onUpdate(results, this.isLive);
+            return results;
+        },
+
+        /**
+         * Get GPU database (for filters, etc.)
+         */
+        getGPUDatabase() {
+            return GPU_DATABASE;
+        },
+
+        /**
+         * Get coin definitions
+         */
+        getCoinDefinitions() {
+            return COIN_DEFINITIONS;
+        },
+
+        /**
+         * Get fee model
+         */
+        getFees() {
+            return { ...DEFAULT_FEES, poolFeePercent: this.poolFeePercent };
+        }
+    };
+
+    /* 
+       FORMAT UTILITIES
+        */
+    const Format = {
+        currency(value, decimals) {
+            if (value === null || value === undefined || isNaN(value)) return '—';
+            const d = decimals !== undefined ? decimals : 2;
+            return '$' + Math.abs(value).toFixed(d);
+        },
+
+        signedCurrency(value) {
+            if (value === null || value === undefined || isNaN(value)) return '—';
+            const sign = value >= 0 ? '+' : '-';
+            return sign + '$' + Math.abs(value).toFixed(2);
+        },
+
+        roiDays(days) {
+            if (days === Infinity || days === null || days === undefined) return '∞';
+            if (days <= 365) return days + 'd';
+            const years = (days / 365).toFixed(1);
+            return years + 'y';
+        },
+
+        roiLabel(days) {
+            if (days === Infinity) return 'Never';
+            if (days <= 365) return days + ' days';
+            const years = (days / 365).toFixed(1);
+            return years + ' years';
+        },
+
+        tdp(watts) {
+            return watts + 'W';
+        },
+
+        hashrate(value, unit) {
+            if (value >= 1000) return (value / 1000).toFixed(1) + ' G' + unit.replace('MH/s', 'H/s').replace('TH/s', 'H/s');
+            return value + ' ' + unit;
+        }
+    };
+
+    /* 
+       PUBLIC API
+        */
+    return {
+        Engine,
+        Calculator,
+        API,
+        Cache,
+        Format,
+        GPU_DATABASE,
+        COIN_DEFINITIONS,
+        DEFAULT_FEES,
+        BASELINE_REVENUE,
+        STREET_PRICES
+    };
+})();
+    </script>
+
+    <!-- WIDGET RENDERING SCRIPT // Pawan K Jajoo -->
+    <script>
+(function() {
+
+    // DOM refs
+    var widget = document.getElementById('gpu-roi-widget');
+    var marqueeContainer = document.getElementById('marquee');
+    var marqueeTrack = document.getElementById('marquee-track');
+    var controlsBar = document.getElementById('controls-bar');
+    var gridContainer = document.getElementById('grid-container');
+    var footer = document.getElementById('widget-footer');
+    var toggleBtn = document.getElementById('toggle-btn');
+    var toggleArrow = document.getElementById('toggle-arrow');
+    var timerEl = document.getElementById('timer');
+    var searchInput = document.getElementById('search-input');
+    var filterBtns = document.querySelectorAll('.filter-btn');
+    var sortDropdown = document.getElementById('sort-dropdown');
+    var electricitySlider = document.getElementById('electricity-slider');
+    var electricityValue = document.getElementById('electricity-value');
+    var poolFeeInput = document.getElementById('pool-fee-input');
+
+    // Widget state
+    var isExpanded = false;
+    var timerInterval = null;
+    var timeRemaining = 60;
+    var activeFilters = ['all'];
+    var activeSortBy = 'profit-desc';
+    var searchTerm = '';
+
+    // Get filtered + sorted results from engne
+    function getResults() {
+        var results = GPURoiEngine.Engine.calculateAll(activeSortBy);
+
+        // Search filter
+        if (searchTerm) {
+            results = results.filter(function(r) {
+                return r.gpu.toLowerCase().indexOf(searchTerm) !== -1;
+            });
+        }
+
+        // Brand/category/profitabile filter
+        if (activeFilters.indexOf('all') === -1) {
+            results = results.filter(function(r) {
+                for (var i = 0; i < activeFilters.length; i++) {
+                    var f = activeFilters[i];
+                    if (f === 'profitable' && r.bestDailyProfit > 0) return true;
+                    if (r.brand === f || r.category === f) return true;
+                }
+                return false;
+            });
+        }
+
+        return results;
+    }
+
+    // Boot up
+    async function init() {
+        try {
+            GPURoiEngine.Engine.init({
+                electricityCost: 0.12,
+                poolFeePercent: 1.5
+            });
+
+            await GPURoiEngine.Engine.refresh();
+
+            renderMarquee();
+            startTimerCycle();
+            attachEventListeners();
+        } catch (e) {
+            console.error('[GPU ROI Ticker] Init fail:', e);
+            marqueeContainer.innerHTML = '<div style="color: #ef4444; padding: 20px; text-align: center;">Failed to load GPU data. Refresh the page.</div>';
+        }
+    }
+
+    // Render ticker marquee (collpased view)
+    function renderMarquee() {
+        try {
+            var results = getResults().slice(0, 15);
+            marqueeTrack.innerHTML = '';
+
+            results.forEach(function(gpu) {
+                var card = document.createElement('div');
+                card.className = 'gpu-ticker-card';
+                var profit = gpu.bestDailyProfit || 0;
+                card.innerHTML =
+                    '<div class="brand-dot ' + gpu.brand + '"></div>' +
+                    '<div class="ticker-gpu-name">' + gpu.gpu + '</div>' +
+                    '<div class="ticker-profit" style="color: ' + (profit > 0 ? '#34d399' : '#ef4444') + '">$' + Math.max(0, profit).toFixed(2) + '</div>' +
+                    '<div class="ticker-arrows">\u2192 \u2197</div>';
+                marqueeTrack.appendChild(card);
+            });
+
+            // Dupe track for continous scroll loop
+            if (marqueeTrack.firstChild) {
+                marqueeTrack.parentNode.appendChild(marqueeTrack.cloneNode(true));
+            }
+        } catch (e) {
+            console.error('[GPU ROI] Marquee render issue:', e);
+        }
+    }
+
+    // Render expanded GPU card grid
+    function renderGrid() {
+        try {
+            var results = getResults();
+            gridContainer.innerHTML = '';
+
+            if (results.length === 0) {
+                gridContainer.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="empty-state-icon">\uD83D\uDCCA</div><div class="empty-state-text">No GPUs match filters.</div></div>';
+                return;
+            }
+
+            results.forEach(function(gpu) {
+                var profit = gpu.bestDailyProfit || 0;
+                var profitColor = profit > 0 ? '#34d399' : '#ef4444';
+                var bestStream = gpu.best || {};
+                var miningProfit = 0, cloudProfit = 0, aiProfit = 0;
+
+                // Pull per-stream numbers from breakdown
+                (gpu.streams || []).forEach(function(s) {
+                    if (s.type === 'mining') miningProfit = s.dailyProfit;
+                    if (s.type === 'cloud') cloudProfit = s.dailyProfit;
+                    if (s.type === 'ai') aiProfit = s.dailyProfit;
+                });
+
+                var roiDays = gpu.roiDays || Infinity;
+                var roiPct = Math.min((365 / Math.max(roiDays, 365)) * 100, 100);
+                var roiBarClass = roiDays > 730 ? 'low' : (roiDays > 365 ? 'medium' : '');
+
+                var card = document.createElement('div');
+                card.className = 'gpu-card';
+                card.innerHTML =
+                    '<div class="card-header">' +
+                        '<div class="gpu-name-badges">' +
+                            '<div class="gpu-name">' + gpu.gpu + '</div>' +
+                            '<div class="badge-row">' +
+                                '<span class="badge brand">' + gpu.brand.toUpperCase() + '</span>' +
+                                '<span class="badge category">' + gpu.category.toUpperCase() + '</span>' +
+                            '</div>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="card-specs">' +
+                        '<div class="spec-item"><span class="spec-label">TDP:</span><span class="spec-value">' + gpu.tdp + 'W</span></div>' +
+                        '<div class="spec-item"><span class="spec-label">VRAM:</span><span class="spec-value">' + (gpu.vram || 'N/A') + '</span></div>' +
+                        (gpu.cudaCores ? '<div class="spec-item"><span class="spec-label">CUDA:</span><span class="spec-value">' + gpu.cudaCores + '</span></div>' : '') +
+                    '</div>' +
+                    '<div class="profit-section">' +
+                        '<div class="profit-label">Daily Profit</div>' +
+                        '<div class="profit-grid">' +
+                            '<div class="profit-item"><div class="profit-type">Mining</div><div class="profit-value">$' + miningProfit.toFixed(2) + '</div></div>' +
+                            '<div class="profit-item ' + (bestStream.type === 'cloud' ? 'highlighted' : '') + '"><div class="profit-type">Cloud</div><div class="profit-value">$' + cloudProfit.toFixed(2) + '</div></div>' +
+                            '<div class="profit-item ' + (bestStream.type === 'ai' ? 'highlighted' : '') + '"><div class="profit-type">AI</div><div class="profit-value">$' + aiProfit.toFixed(2) + '</div></div>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="roi-section">' +
+                        '<div class="roi-label">ROI (' + (roiDays === Infinity ? '\u221E' : roiDays.toFixed(0)) + ' days)</div>' +
+                        '<div class="roi-bar"><div class="roi-fill ' + roiBarClass + '" style="width:' + roiPct + '%"></div><div class="roi-text">' + (roiDays > 999 ? '\u221E' : roiDays.toFixed(0) + 'd') + '</div></div>' +
+                    '</div>' +
+                    '<div class="efficiency-section">' +
+                        '<div class="efficiency-label">Efficiency</div>' +
+                        '<div class="efficiency-value">$' + gpu.efficiency.toFixed(3) + '/kW/d</div>' +
+                    '</div>' +
+                    '<div class="commentary-section">"' + gpu.commentary + '"</div>';
+                gridContainer.appendChild(card);
+            });
+        } catch (e) {
+            console.error('[GPU ROI] Grid render issue:', e);
+        }
+    }
+
+    // Expand / collapse toggle
+    function toggleExpand() {
+        isExpanded = !isExpanded;
+
+        if (isExpanded) {
+            widget.classList.remove('collapsed');
+            widget.classList.add('expanded');
+            marqueeContainer.classList.add('hidden');
+            controlsBar.classList.add('visible');
+            gridContainer.classList.add('visible');
+            footer.classList.add('visible');
+            toggleBtn.textContent = 'Collapse \u2193';
+            renderGrid();
+        } else {
+            widget.classList.add('collapsed');
+            widget.classList.remove('expanded');
+            marqueeContainer.classList.remove('hidden');
+            controlsBar.classList.remove('visible');
+            gridContainer.classList.remove('visible');
+            footer.classList.remove('visible');
+            toggleBtn.textContent = 'Expand \u2191';
+            renderMarquee();
+        }
+    }
+
+    // 60s countdown and auto-refresh
+    function startTimerCycle() {
+        timeRemaining = 60;
+        timerEl.textContent = '60s';
+
+        if (timerInterval) clearInterval(timerInterval);
+        timerInterval = setInterval(function() {
+            timeRemaining--;
+            timerEl.textContent = timeRemaining + 's';
+            if (timeRemaining <= 0) {
+                doRefresh();
+                timeRemaining = 60;
+            }
+        }, 1000);
+    }
+
+    // Refresh cycle. Pull new API data then re-render
+    async function doRefresh() {
+        try {
+            await GPURoiEngine.Engine.refresh();
+            if (isExpanded) renderGrid();
+            else renderMarquee();
+        } catch (e) {
+            console.error('[GPU ROI] Refresh issue:', e);
+        }
+    }
+
+    // Wire up UI controlls
+    function attachEventListeners() {
+        toggleBtn.addEventListener('click', toggleExpand);
+
+        // Seach by GPU name
+        searchInput.addEventListener('input', function(e) {
+            searchTerm = e.target.value.toLowerCase();
+            if (isExpanded) renderGrid();
+        });
+
+        // Brand and category filter buttons
+        filterBtns.forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+                var filter = e.target.dataset.filter;
+                if (filter === 'all') {
+                    filterBtns.forEach(function(b) { b.classList.toggle('active', b.dataset.filter === 'all'); });
+                    activeFilters = ['all'];
+                } else {
+                    e.target.classList.toggle('active');
+                    document.querySelector('[data-filter="all"]').classList.remove('active');
+                    var actv = [];
+                    filterBtns.forEach(function(b) {
+                        if (b.classList.contains('active') && b.dataset.filter !== 'all') actv.push(b.dataset.filter);
+                    });
+                    activeFilters = actv.length ? actv : ['all'];
+                    if (activeFilters.indexOf('all') !== -1) {
+                        filterBtns.forEach(function(b) { b.classList.toggle('active', b.dataset.filter === 'all'); });
+                    }
+                }
+                if (isExpanded) renderGrid();
+            });
+        });
+
+        // Sort dropdown
+        sortDropdown.addEventListener('change', function(e) {
+            activeSortBy = e.target.value;
+            if (isExpanded) renderGrid();
+        });
+
+        // Electricty cost slider
+        electricitySlider.addEventListener('input', function(e) {
+            var cost = parseFloat(e.target.value);
+            electricityValue.textContent = '$' + cost.toFixed(2);
+            GPURoiEngine.Engine.electricityCost = cost;
+            GPURoiEngine.Engine.saveSettings();
+            if (isExpanded) renderGrid();
+        });
+
+        // Pool fee input
+        poolFeeInput.addEventListener('change', function(e) {
+            var fee = parseFloat(e.target.value);
+            GPURoiEngine.Engine.poolFeePercent = fee;
+            GPURoiEngine.Engine.saveSettings();
+            if (isExpanded) renderGrid();
+        });
+    }
+
+    // Go
+    init().catch(function(e) { console.error('[GPU ROI] Init error:', e); });
+})();
+    </script>
+</body>
+</html>
