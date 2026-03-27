@@ -1,6 +1,6 @@
 # GPU ROI Calculator Suite
 
-Embeddable GPU profitability widgets for Wix iframes. Real-time mining, cloud leasing, and AI inference data. No backend.
+Embeddable GPU profitability widgets for iframes. Real-time mining, cloud leasing, and AI inference data. No backend.
 
 ## Live Demo
 
