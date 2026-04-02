@@ -2175,6 +2175,7 @@ const GPURoiEngine = (() => {
                 sliders[key] = { input, valueSpan };
             });
 
+            container.innerHTML = '';  // Clear existing sliders to prevent duplication on refresh
             container.appendChild(panel);
 
             return {
@@ -2209,6 +2210,7 @@ const GPURoiEngine = (() => {
                 border-radius:8px; text-align:center; margin:6px 0;
                 font-family:inherit;
             `;
+            container.innerHTML = '';  // Clear existing banner to prevent duplication on refresh
             container.appendChild(banner);
             return {
                 show(msg) { banner.innerHTML = '⚠ ' + (msg || 'Live data unavailable — showing last known live data.'); banner.style.display = 'block'; },
@@ -2333,6 +2335,7 @@ const GPURoiEngine = (() => {
         let poolFee = parseFloat(localStorage.getItem('poolFee')) || 1.5;
         let refreshCountdown = 60;
         let isCached = false;
+        let staleBanner = null;
 
         // Initialize on overlay click
         overlayBtn.addEventListener('click', () => {
@@ -2461,7 +2464,7 @@ const GPURoiEngine = (() => {
                 const sliderContainer = document.getElementById('sliderControls');
                 const bannerContainer = document.getElementById('staleBannerArea');
 
-                const staleBanner = GPURoiEngine.StaleBanner.create(bannerContainer, 'dark');
+                staleBanner = GPURoiEngine.StaleBanner.create(bannerContainer, 'dark');
                 const sliderPanel = GPURoiEngine.SliderUI.create(sliderContainer, {
                     theme: 'dark',
                     onUpdate: function(key, value) {
@@ -2710,8 +2713,26 @@ const GPURoiEngine = (() => {
                 refreshTimer.textContent = `Refreshing in ${refreshCountdown}s...`;
 
                 if (refreshCountdown <= 0) {
-                    clearInterval(timer);
-                    init();
+                    refreshCountdown = 60;
+                    // Refresh data only — do NOT call init() again as it duplicates sliders/banners
+                    GPURoiEngine.Engine.refresh().then(function(results) {
+                        allGpuData = transformResults(results);
+                        isCached = !GPURoiEngine.Engine.isLive;
+                        updateStatus();
+                        if (GPURoiEngine.Engine.isStale || GPURoiEngine.Engine.usingLastLive) {
+                            var sources = GPURoiEngine.Engine.getDataSources();
+                            if (GPURoiEngine.Engine.usingLastLive && sources.lastLiveTimestamp) {
+                                var ago = GPURoiEngine.Engine._formatTimeAgo(sources.lastLiveTimestamp);
+                                staleBanner.show('Live data sources unreachable — showing last successful live data from ' + ago + '.');
+                            } else if (GPURoiEngine.Engine.isStale) {
+                                staleBanner.show('All live data sources unreachable. No prior live data — showing hardcoded baseline estimates.');
+                            }
+                        } else { staleBanner.hide(); }
+                        applyFiltersAndSort();
+                        renderGrid();
+                    }).catch(function(err) {
+                        console.error('Refresh cycle error:', err);
+                    });
                 }
             }, 1000);
         }

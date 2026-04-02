@@ -1088,6 +1088,7 @@ const GPURoiEngine = (() => {
                 sliders[key] = { input, valueSpan };
             });
 
+            container.innerHTML = '';  // Clear existing sliders to prevent duplication on refresh
             container.appendChild(panel);
 
             return {
@@ -1122,6 +1123,7 @@ const GPURoiEngine = (() => {
                 border-radius:8px; text-align:center; margin:6px 0;
                 font-family:inherit;
             `;
+            container.innerHTML = '';  // Clear existing banner to prevent duplication on refresh
             container.appendChild(banner);
             return {
                 show(msg) {
